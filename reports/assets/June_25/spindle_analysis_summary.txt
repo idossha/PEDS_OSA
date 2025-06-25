@@ -1,0 +1,15 @@
+Spindle Analysis Summary
+=====================
+
+Temporal Statistics:
+------------------
+Average spindle density: 11.60 spindles/minute
+Peak spindle density: 178.00 spindles/minute
+Total recording duration: 304.56 minutes
+
+Spindle Characteristics:
+----------------------
+Total spindles detected: 3526
+Mean spindle duration: 0.763 ± 0.241 seconds
+Mean spindle amplitude: 52.493 ± 16.314 μV
+Mean spindle frequency: 12.294 ± 0.319 Hz

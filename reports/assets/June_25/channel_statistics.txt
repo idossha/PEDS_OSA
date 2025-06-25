@@ -1,0 +1,8 @@
+Spindle Statistics per Channel
+============================
+
+Total number of channels analyzed: 145
+Average spindles per channel: 24.32
+Maximum spindles in a channel: 106
+Minimum spindles in a channel: 1
+Standard deviation: 28.71
