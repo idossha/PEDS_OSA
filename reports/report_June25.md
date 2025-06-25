@@ -30,12 +30,6 @@ Spindle detection was performed using the YASA (Yet Another Spindle Algorithm) p
 
 ### 4. Results
 
-#### 4.1 Overall Spindle Characteristics
-![Spindle Characteristics](assets/June_25/spindle_characteristics.png)
-*Figure: A) Average spindle waveform across all detected events. B) Example of high-amplitude spindles from different channels. C) Distribution of spindle durations. D) Distribution of spindle frequencies.*
-
-![Best Spindle Example](assets/June_25/best_spindle_detail.png)
-*Figure: Detailed view of the highest amplitude spindle detected in the recording, showing pre- and post-spindle context.*
 
 #### 4.1.1 Individual Spindle Visualization
 ![Spindle Overlay](assets/June_25/spindle_overlay.png)
