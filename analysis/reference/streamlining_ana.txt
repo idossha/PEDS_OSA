@@ -1,0 +1,26 @@
+Hypothesis:
+
+1. More frontal spindles you have the better the improvement (cohen's D, avg % change, overall % change, z score)
+
+What else impact?
+
+Control for Age, sex 
+
+
+---
+
+REFERENCE:
+
+overall_AHI - severity of condition brainstem related. 
+overall_oai - cannot breath.
+
+
+AHI cutoff:
+Low    -     
+Medium - 
+High   - 
+
+
+Negative value = improvement
+Positive value = bad
+Larger magnitude = greater change
