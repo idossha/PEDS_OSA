@@ -8,8 +8,6 @@ This repository contains multiple statistical analysis pipelines:
 
 1. **Regional Spindle Analysis** (RECOMMENDED) - Complete anterior vs posterior spindle density comparison with TOVA scores
 2. **Regional AHI Analysis** (RECOMMENDED) - Complete anterior vs posterior spindle density comparison with sleep apnea severity
-3. **Individual AHI Analysis** - Legacy individual AHI analysis  
-4. **Individual TOVA Analysis** - Legacy individual region analysis
 
 ## Quick Start
 
