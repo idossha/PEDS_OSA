@@ -140,7 +140,7 @@ Examples:
         print("\n3. Running complete regional analysis...")
         try:
             # Import and run the complete analysis
-            from regional_spindle_analysis import RegionalSpindleAnalysis
+            from analysis.regional_tova_analysis import RegionalSpindleAnalysis
             
             output_dir = os.path.join(project_dir, "regional_analysis_results")
             analysis = RegionalSpindleAnalysis(project_dir, output_dir)
