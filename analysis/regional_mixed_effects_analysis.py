@@ -14,6 +14,7 @@ import pandas as pd
 import numpy as np
 import os
 import glob
+import logging
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
@@ -33,23 +34,55 @@ class SimplifiedMixedEffectsAnalysis:
         self.project_dir = project_dir
         self.output_dir = os.path.join(project_dir, "mixed_effects_results")
         os.makedirs(self.output_dir, exist_ok=True)
-        
+
+        # Setup logging
+        self.setup_logging()
+
         # Define channels (simplified)
         self.anterior_channels = [str(i) for i in range(1, 41)]  # E1-E40
         self.posterior_channels = [str(i) for i in range(70, 100)]  # E70-E99
-        
-        print(f"Analysis initialized. Output: {self.output_dir}")
-    
+
+        self.logger.info(f"Analysis initialized. Output: {self.output_dir}")
+
+    def setup_logging(self):
+        """Setup logging to both console and file."""
+        log_file = os.path.join(self.output_dir, 'mixed_effects_analysis.log')
+
+        # Create logger
+        self.logger = logging.getLogger('mixed_effects_analysis')
+        self.logger.setLevel(logging.INFO)
+
+        # Remove any existing handlers
+        self.logger.handlers.clear()
+
+        # Create formatters
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',
+                                    datefmt='%Y-%m-%d %H:%M:%S')
+
+        # File handler
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+
+        # Console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+
+        # Add handlers
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+
     def load_data(self):
         """Load and combine all necessary data."""
-        print("Loading data...")
-        
+        self.logger.info("Loading data...")
+
         # 1. Load spindle data for both regions
         spindle_data = []
-        pattern = os.path.join(self.project_dir, "derivatives", "sub-*", "spindles", "results", "all_spindles_detailed.csv")
+        pattern = os.path.join(self.project_dir, "derivatives", "sub-*", "spindles", "results", "*all_spindles_detailed.csv")
         files = glob.glob(pattern)
-        
-        print(f"Found {len(files)} subject files")
+
+        self.logger.info(f"Found {len(files)} subject files")
         
         for file_path in files:
             subject_id = file_path.split(os.sep)[-4].replace("sub-", "")
@@ -72,30 +105,43 @@ class SimplifiedMixedEffectsAnalysis:
                 if len(anterior_data) > 0:
                     duration_min = anterior_data['End'].max() / 60
                     density = len(anterior_data) / duration_min if duration_min > 0 else 0
+                    total_spindles = len(anterior_data)
                     spindle_data.append({
                         'Subject': subject_id,
                         'Region': 'anterior',
-                        'spindle_density': density
+                        'spindle_density': density,
+                        'anterior_spindle_density': density,
+                        'anterior_total_spindles': total_spindles,
+                        'anterior_recording_duration': duration_min
                     })
-                
+
                 # Process posterior region
                 posterior_data = df[df['Channel'].isin([int(ch) for ch in self.posterior_channels])]
                 if len(posterior_data) > 0:
                     duration_min = posterior_data['End'].max() / 60
                     density = len(posterior_data) / duration_min if duration_min > 0 else 0
+                    total_spindles = len(posterior_data)
                     spindle_data.append({
                         'Subject': subject_id,
                         'Region': 'posterior',
-                        'spindle_density': density
+                        'spindle_density': density,
+                        'posterior_spindle_density': density,
+                        'posterior_total_spindles': total_spindles,
+                        'posterior_recording_duration': duration_min
                     })
                     
             except Exception as e:
-                print(f"  Warning: Could not process {subject_id}: {e}")
+                self.logger.warning(f"Could not process {subject_id}: {e}")
                 continue
         
         spindle_df = pd.DataFrame(spindle_data)
-        print(f"✓ Spindle data: {len(spindle_df)} observations from {len(spindle_df['Subject'].unique()) if len(spindle_df) > 0 else 0} subjects")
-        
+        self.logger.info(f"✓ Spindle data: {len(spindle_df)} observations from {len(spindle_df['Subject'].unique()) if len(spindle_df) > 0 else 0} subjects")
+
+        # Save spindle data for the two regions
+        spindle_output_file = os.path.join(self.output_dir, 'spindle_density_by_region.csv')
+        spindle_df.to_csv(spindle_output_file, index=False)
+        self.logger.info(f"✓ Spindle data saved to: {spindle_output_file}")
+
         # 2. Load demographics with encoding handling
         demo_file = os.path.join(self.project_dir, "demographics.csv")
         try:
@@ -105,15 +151,15 @@ class SimplifiedMixedEffectsAnalysis:
                 demo_df = pd.read_csv(demo_file, encoding='latin-1')
             except UnicodeDecodeError:
                 demo_df = pd.read_csv(demo_file, encoding='cp1252')
-        
+
         demo_df['Subject'] = demo_df['pptid'].astype(str)
         # Calculate age: round to nearest year based on months
         demo_df['age'] = demo_df['age_years'] + (demo_df['age_months'] >= 6).astype(int)
         demo_df['sex'] = demo_df['gender'].map({0: 'F', 1: 'M'})
         demo_df['AHI'] = demo_df['nrem_ahi']
         demo_df['log_AHI'] = np.log1p(demo_df['AHI'])
-        print(f"✓ Demographics: {len(demo_df)} subjects")
-        
+        self.logger.info(f"✓ Demographics: {len(demo_df)} subjects")
+
         # 3. Load TOVA data with encoding handling
         tova_file = os.path.join(self.project_dir, "TOVA.csv")
         try:
@@ -123,9 +169,9 @@ class SimplifiedMixedEffectsAnalysis:
                 tova_df = pd.read_csv(tova_file, encoding='latin-1')
             except UnicodeDecodeError:
                 tova_df = pd.read_csv(tova_file, encoding='cp1252')
-        
+
         tova_df['Subject'] = tova_df['Subject'].astype(str)
-        print(f"✓ TOVA data: {len(tova_df)} subjects")
+        self.logger.info(f"✓ TOVA data: {len(tova_df)} subjects")
         
         # 4. Normalize subject IDs (remove leading zeros to match across datasets)
         spindle_df['Subject'] = spindle_df['Subject'].astype(str).str.lstrip('0')
@@ -139,176 +185,176 @@ class SimplifiedMixedEffectsAnalysis:
         
         # Clean data
         data = data.dropna(subset=['spindle_density', 'age', 'sex', 'cohens_d', 'AHI'])
-        
-        print(f"✓ Final dataset: {len(data)} observations from {len(data['Subject'].unique())} subjects")
-        print(f"  - Anterior: {len(data[data['Region'] == 'anterior'])} observations")
-        print(f"  - Posterior: {len(data[data['Region'] == 'posterior'])} observations")
-        
+
+        self.logger.info(f"✓ Final dataset: {len(data)} observations from {len(data['Subject'].unique())} subjects")
+        self.logger.info(f"  - Anterior: {len(data[data['Region'] == 'anterior'])} observations")
+        self.logger.info(f"  - Posterior: {len(data[data['Region'] == 'posterior'])} observations")
+
         # Save the final merged dataset
         output_file = os.path.join(self.output_dir, 'mixed_effects_dataset.csv')
         data.to_csv(output_file, index=False)
-        print(f"✓ Dataset saved to: {output_file}")
-        
+        self.logger.info(f"✓ Dataset saved to: {output_file}")
+
         return data
     
     def create_longitudinal_data(self, data):
         """Create longitudinal format for RQ1."""
-        print("Creating longitudinal dataset...")
-        
+        self.logger.info("Creating longitudinal dataset...")
+
         # Session A (baseline): Cohen's d = 0
         session_a = data.copy()
         session_a['Session'] = 'A'
         session_a['Time'] = 0
         session_a['performance'] = 0  # Baseline
-        
+
         # Session B (post): Cohen's d = change score
         session_b = data.copy()
         session_b['Session'] = 'B'
         session_b['Time'] = 1
         session_b['performance'] = session_b['cohens_d']  # Change from baseline
-        
+
         # Combine
         longitudinal = pd.concat([session_a, session_b], ignore_index=True)
-        
-        print(f"✓ Longitudinal dataset: {len(longitudinal)} observations ({len(longitudinal)//2} subjects × 2 sessions)")
+
+        self.logger.info(f"✓ Longitudinal dataset: {len(longitudinal)} observations ({len(longitudinal)//2} subjects × 2 sessions)")
         return longitudinal
     
     def analyze_rq1_longitudinal(self, data):
         """RQ1: Spindle density predicting performance change over time."""
-        print("\n" + "="*50)
-        print("RQ1: LONGITUDINAL ANALYSIS")
-        print("="*50)
-        
+        self.logger.info("="*50)
+        self.logger.info("RQ1: LONGITUDINAL ANALYSIS")
+        self.logger.info("="*50)
+
         results = {}
-        
+
         # Model 1: Main effects only
-        print("\nModel 1: Main effects (Time + Spindle Density)")
+        self.logger.info("Model 1: Main effects (Time + Spindle Density)")
         try:
-            model1 = mixedlm("performance ~ Time + spindle_density + age + sex", 
-                           data=data, 
+            model1 = mixedlm("performance ~ Time + spindle_density + age + sex",
+                           data=data,
                            groups=data["Subject"]).fit()
             results['main_effects'] = model1
-            print(f"✓ Time effect: β = {model1.params['Time']:.4f}, p = {model1.pvalues['Time']:.4f}")
-            print(f"✓ Spindle density effect: β = {model1.params['spindle_density']:.4f}, p = {model1.pvalues['spindle_density']:.4f}")
+            self.logger.info(f"✓ Time effect: β = {model1.params['Time']:.4f}, p = {model1.pvalues['Time']:.4f}")
+            self.logger.info(f"✓ Spindle density effect: β = {model1.params['spindle_density']:.4f}, p = {model1.pvalues['spindle_density']:.4f}")
         except Exception as e:
-            print(f"✗ Model 1 failed: {e}")
+            self.logger.error(f"✗ Model 1 failed: {e}")
             results['main_effects'] = None
         
         # Model 2: Interaction model
-        print("\nModel 2: Time × Spindle Density Interaction")
+        self.logger.info("Model 2: Time × Spindle Density Interaction")
         try:
-            model2 = mixedlm("performance ~ Time * spindle_density + age + sex", 
-                           data=data, 
+            model2 = mixedlm("performance ~ Time * spindle_density + age + sex",
+                           data=data,
                            groups=data["Subject"]).fit()
             results['interaction'] = model2
-            print(f"✓ Time effect: β = {model2.params['Time']:.4f}, p = {model2.pvalues['Time']:.4f}")
-            print(f"✓ Spindle density effect: β = {model2.params['spindle_density']:.4f}, p = {model2.pvalues['spindle_density']:.4f}")
+            self.logger.info(f"✓ Time effect: β = {model2.params['Time']:.4f}, p = {model2.pvalues['Time']:.4f}")
+            self.logger.info(f"✓ Spindle density effect: β = {model2.params['spindle_density']:.4f}, p = {model2.pvalues['spindle_density']:.4f}")
             if 'Time:spindle_density' in model2.params:
-                print(f"✓ Interaction: β = {model2.params['Time:spindle_density']:.4f}, p = {model2.pvalues['Time:spindle_density']:.4f}")
-            
+                self.logger.info(f"✓ Interaction: β = {model2.params['Time:spindle_density']:.4f}, p = {model2.pvalues['Time:spindle_density']:.4f}")
+
             # Report demographic effects
-            print("  Demographic effects:")
+            self.logger.info("  Demographic effects:")
             if 'age' in model2.params:
                 age_sig = "***" if model2.pvalues['age'] < 0.001 else "**" if model2.pvalues['age'] < 0.01 else "*" if model2.pvalues['age'] < 0.05 else "ns"
-                print(f"    Age: β = {model2.params['age']:.4f}, p = {model2.pvalues['age']:.4f} {age_sig}")
+                self.logger.info(f"    Age: β = {model2.params['age']:.4f}, p = {model2.pvalues['age']:.4f} {age_sig}")
             if 'sex[T.M]' in model2.params:
                 sex_sig = "***" if model2.pvalues['sex[T.M]'] < 0.001 else "**" if model2.pvalues['sex[T.M]'] < 0.01 else "*" if model2.pvalues['sex[T.M]'] < 0.05 else "ns"
-                print(f"    Sex (Male vs Female): β = {model2.params['sex[T.M]']:.4f}, p = {model2.pvalues['sex[T.M]']:.4f} {sex_sig}")
-                
+                self.logger.info(f"    Sex (Male vs Female): β = {model2.params['sex[T.M]']:.4f}, p = {model2.pvalues['sex[T.M]']:.4f} {sex_sig}")
+
         except Exception as e:
-            print(f"✗ Model 2 failed: {e}")
+            self.logger.error(f"✗ Model 2 failed: {e}")
             results['interaction'] = None
         
         # Model 3: Regional analysis
-        print("\nModel 3: Regional Analysis")
+        self.logger.info("Model 3: Regional Analysis")
         for region in ['anterior', 'posterior']:
             region_data = data[data['Region'] == region]
-            print(f"\n{region.upper()} (n = {len(region_data['Subject'].unique())} subjects):")
-            
+            self.logger.info(f"{region.upper()} (n = {len(region_data['Subject'].unique())} subjects):")
+
             try:
-                model_region = mixedlm("performance ~ Time * spindle_density + age + sex", 
-                                     data=region_data, 
+                model_region = mixedlm("performance ~ Time * spindle_density + age + sex",
+                                     data=region_data,
                                      groups=region_data["Subject"]).fit()
                 results[f'{region}_model'] = model_region
-                
+
                 if 'Time:spindle_density' in model_region.params:
                     coef = model_region.params['Time:spindle_density']
                     p_val = model_region.pvalues['Time:spindle_density']
                     sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else "ns"
-                    print(f"  Interaction: β = {coef:.4f}, p = {p_val:.4f} {sig}")
-                
+                    self.logger.info(f"  Interaction: β = {coef:.4f}, p = {p_val:.4f} {sig}")
+
             except Exception as e:
-                print(f"  ✗ Failed: {e}")
+                self.logger.error(f"  ✗ Failed: {e}")
                 results[f'{region}_model'] = None
         
         return results
     
     def analyze_rq2_cross_sectional(self, data):
         """RQ2: AHI predicting regional spindle density."""
-        print("\n" + "="*50)
-        print("RQ2: CROSS-SECTIONAL AHI ANALYSIS")
-        print("="*50)
-        
+        self.logger.info("="*50)
+        self.logger.info("RQ2: CROSS-SECTIONAL AHI ANALYSIS")
+        self.logger.info("="*50)
+
         results = {}
-        
+
         # Model 1: Main effect of AHI
-        print("\nModel 1: AHI Main Effect")
+        self.logger.info("Model 1: AHI Main Effect")
         try:
-            model1 = mixedlm("spindle_density ~ log_AHI + age + sex", 
-                           data=data, 
+            model1 = mixedlm("spindle_density ~ log_AHI + age + sex",
+                           data=data,
                            groups=data["Subject"]).fit()
             results['ahi_main'] = model1
-            print(f"✓ AHI effect: β = {model1.params['log_AHI']:.4f}, p = {model1.pvalues['log_AHI']:.4f}")
+            self.logger.info(f"✓ AHI effect: β = {model1.params['log_AHI']:.4f}, p = {model1.pvalues['log_AHI']:.4f}")
         except Exception as e:
-            print(f"✗ Model 1 failed: {e}")
+            self.logger.error(f"✗ Model 1 failed: {e}")
             results['ahi_main'] = None
         
         # Model 2: AHI × Region interaction
-        print("\nModel 2: AHI × Region Interaction")
+        self.logger.info("Model 2: AHI × Region Interaction")
         try:
-            model2 = mixedlm("spindle_density ~ log_AHI * Region + age + sex", 
-                           data=data, 
+            model2 = mixedlm("spindle_density ~ log_AHI * Region + age + sex",
+                           data=data,
                            groups=data["Subject"]).fit()
             results['ahi_interaction'] = model2
-            print(f"✓ AHI effect: β = {model2.params['log_AHI']:.4f}, p = {model2.pvalues['log_AHI']:.4f}")
+            self.logger.info(f"✓ AHI effect: β = {model2.params['log_AHI']:.4f}, p = {model2.pvalues['log_AHI']:.4f}")
             if 'log_AHI:Region[T.posterior]' in model2.params:
                 coef = model2.params['log_AHI:Region[T.posterior]']
                 p_val = model2.pvalues['log_AHI:Region[T.posterior]']
                 sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else "ns"
-                print(f"✓ AHI × Region interaction: β = {coef:.4f}, p = {p_val:.4f} {sig}")
-            
+                self.logger.info(f"✓ AHI × Region interaction: β = {coef:.4f}, p = {p_val:.4f} {sig}")
+
             # Report demographic effects
-            print("  Demographic effects:")
+            self.logger.info("  Demographic effects:")
             if 'age' in model2.params:
                 age_sig = "***" if model2.pvalues['age'] < 0.001 else "**" if model2.pvalues['age'] < 0.01 else "*" if model2.pvalues['age'] < 0.05 else "ns"
-                print(f"    Age: β = {model2.params['age']:.4f}, p = {model2.pvalues['age']:.4f} {age_sig}")
+                self.logger.info(f"    Age: β = {model2.params['age']:.4f}, p = {model2.pvalues['age']:.4f} {age_sig}")
             if 'sex[T.M]' in model2.params:
                 sex_sig = "***" if model2.pvalues['sex[T.M]'] < 0.001 else "**" if model2.pvalues['sex[T.M]'] < 0.01 else "*" if model2.pvalues['sex[T.M]'] < 0.05 else "ns"
-                print(f"    Sex (Male vs Female): β = {model2.params['sex[T.M]']:.4f}, p = {model2.pvalues['sex[T.M]']:.4f} {sex_sig}")
-                
+                self.logger.info(f"    Sex (Male vs Female): β = {model2.params['sex[T.M]']:.4f}, p = {model2.pvalues['sex[T.M]']:.4f} {sex_sig}")
+
         except Exception as e:
-            print(f"✗ Model 2 failed: {e}")
+            self.logger.error(f"✗ Model 2 failed: {e}")
             results['ahi_interaction'] = None
         
         # Model 3: Separate by region
-        print("\nModel 3: Region-Specific Models")
+        self.logger.info("Model 3: Region-Specific Models")
         for region in ['anterior', 'posterior']:
             region_data = data[data['Region'] == region]
-            print(f"\n{region.upper()} (n = {len(region_data)} subjects):")
-            
+            self.logger.info(f"{region.upper()} (n = {len(region_data)} subjects):")
+
             try:
                 # Use OLS for single region
-                model_region = ols("spindle_density ~ log_AHI + age + sex", 
+                model_region = ols("spindle_density ~ log_AHI + age + sex",
                                   data=region_data).fit()
                 results[f'{region}_ahi'] = model_region
                 coef = model_region.params['log_AHI']
                 p_val = model_region.pvalues['log_AHI']
                 r_sq = model_region.rsquared
                 sig = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else "ns"
-                print(f"  AHI effect: β = {coef:.4f}, p = {p_val:.4f} {sig}, R² = {r_sq:.3f}")
-                
+                self.logger.info(f"  AHI effect: β = {coef:.4f}, p = {p_val:.4f} {sig}, R² = {r_sq:.3f}")
+
             except Exception as e:
-                print(f"  ✗ Failed: {e}")
+                self.logger.error(f"  ✗ Failed: {e}")
                 results[f'{region}_ahi'] = None
         
         return results
@@ -415,8 +461,8 @@ class SimplifiedMixedEffectsAnalysis:
         output_file = os.path.join(self.output_dir, 'simplified_mixed_effects_results.png')
         plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
         plt.close()
-        
-        print(f"Clear figures saved to {output_file}")
+
+        self.logger.info(f"Clear figures saved to {output_file}")
     
     def save_summary(self, rq1_results, rq2_results, longitudinal_data, cross_sectional_data):
         """Save a concise, interpretable summary."""
@@ -480,7 +526,7 @@ class SimplifiedMixedEffectsAnalysis:
                     if int_p < 0.05:
                         f.write(f"REGIONAL DIFFERENCE FOUND! AHI affects anterior and posterior regions differently.\n")
                         f.write(f"Interaction effect: β = {int_coef:.4f}, p = {int_p:.4f} {int_sig}\n")
-                        f.write("This suggests brain region-specific vulnerability to sleep apnea.\n\n")
+                        f.write("This suggests netregion-specific vulnerability to sleep apnea.\n\n")
                     else:
                         f.write(f"No significant regional difference: β = {int_coef:.4f}, p = {int_p:.4f} {int_sig}\n\n")
             else:
@@ -490,7 +536,7 @@ class SimplifiedMixedEffectsAnalysis:
             f.write("-" * 20 + "\n")
             f.write("• Mixed effects models account for individual differences and repeated measures\n")
             f.write("• Spindle density may serve as a biomarker for cognitive resilience\n")
-            f.write("• Regional brain differences suggest targeted interventions may be needed\n")
+            f.write("• Regional netdifferences suggest targeted interventions may be needed\n")
             f.write("• Sleep apnea severity impacts sleep spindle generation\n\n")
             
             f.write("FILES GENERATED\n")
@@ -498,7 +544,7 @@ class SimplifiedMixedEffectsAnalysis:
             f.write("• simplified_mixed_effects_results.png - Clear visualization of main effects and interactions\n")
             f.write("• simplified_results_summary.txt - This interpretable summary\n")
         
-        print(f"✓ Interpretable summary saved to {summary_file}")
+        self.logger.info(f"✓ Interpretable summary saved to {summary_file}")
 
     def save_detailed_statistical_report(self, rq1_results, rq2_results, output_dir):
         """Save detailed statistical model output to separate file"""
@@ -568,33 +614,33 @@ class SimplifiedMixedEffectsAnalysis:
                 f.write(str(rq2_results['posterior_ahi'].summary()))
                 f.write("\n\n")
         
-        print(f"✓ Detailed statistical report saved to {stats_file}")
+        self.logger.info(f"✓ Detailed statistical report saved to {stats_file}")
         return stats_file
     
     def run_analysis(self):
         """Run the complete simplified analysis."""
-        print("PEDS OSA - Simplified Mixed Effects Analysis")
-        print("=" * 50)
-        
+        self.logger.info("PEDS OSA - Simplified Mixed Effects Analysis")
+        self.logger.info("=" * 50)
+
         # Load data
         data = self.load_data()
-        
+
         # Prepare datasets
         longitudinal_data = self.create_longitudinal_data(data)
         cross_sectional_data = data.copy()
-        
+
         # Run analyses
         rq1_results = self.analyze_rq1_longitudinal(longitudinal_data)
         rq2_results = self.analyze_rq2_cross_sectional(cross_sectional_data)
-        
+
         # Create visualizations and summary
         self.create_clear_figures(longitudinal_data, cross_sectional_data, rq1_results, rq2_results)
         self.save_summary(rq1_results, rq2_results, longitudinal_data, cross_sectional_data)
         self.save_detailed_statistical_report(rq1_results, rq2_results, self.output_dir)
-        
-        print(f"\n✓ ANALYSIS COMPLETE!")
-        print(f"✓ Results saved to: {self.output_dir}")
-        
+
+        self.logger.info(f"✓ ANALYSIS COMPLETE!")
+        self.logger.info(f"✓ Results saved to: {self.output_dir}")
+
         return longitudinal_data, cross_sectional_data, rq1_results, rq2_results
 
 def main(project_dir):
@@ -610,5 +656,5 @@ def main(project_dir):
 
 if __name__ == "__main__":
     import sys
-    project_dir = sys.argv[1] if len(sys.argv) > 1 else "/Volumes/Ido/002_PEDS_OSA"
+    project_dir = sys.argv[1] if len(sys.argv) > 1 else "/Volumes/Ido/PROJECTS_DATA/PEDS_OSA"
     main(project_dir)
